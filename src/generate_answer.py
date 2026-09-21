@@ -23,7 +23,7 @@ def build_prompt(question: str, retrieved_chunks) -> str:
     return f"""You are a helpful assistant. Answer the question using ONLY the context below.
 If the answer is not contained in the context, respond with exactly:
 "I don't have enough information to answer that." and nothing else — no citation.
-If you DO answer from the context, always cite the section number(s) you used, like (Section 2).
+If you DO answer from the context, always cite the section number(s) you used, like (Section 2). If the answer appears in multiple sections, cite all of them, like (Section 6, Section 7).
 
 Context:
 {context}
@@ -38,8 +38,9 @@ def generate_answer(question: str, embed_model, conn) -> str:
     prompt = build_prompt(question, retrieved)
 
     response = ollama.chat(
-        model=LLM_MODEL,
-        messages=[{"role": "user", "content": prompt}],
+    model=LLM_MODEL,
+    messages=[{"role": "user", "content": prompt}],
+    options={"temperature": 0.2, "seed": 42},
     )
     return response["message"]["content"]
 
