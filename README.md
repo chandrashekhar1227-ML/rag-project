@@ -21,6 +21,9 @@ graph LR
     E --> H[Top-K Retrieval<br/>cosine similarity]
     H --> I[Generate<br/>Ollama / llama3.2:3b]
     I --> J[Cited Answer]
+    K[Ground-truth Q&A set] -.->|evaluate.py| H
+    K -.->|evaluate.py| I
+    I -.->|5 metrics| L[Hit Rate, MRR, Citation Acc.,<br/>Refusal Acc., Pass Rate]
 ```
 
 ## Tech stack
@@ -71,6 +74,21 @@ uvicorn src.api:app --reload
 | `/health` | GET | Liveness check |
 | `/documents` | POST | Upload and ingest a PDF |
 | `/query` | POST | Ask a question against the ingested document |
+## Evaluation
+
+Measured automatically (`src/evaluate.py`) against 6 ground-truth questions (5 content questions + 1 deliberately off-topic refusal test), 3 runs per question to account for LLM sampling variance.
+
+| Metric | Score | What it measures |
+|---|---|---|
+| Retrieval Hit Rate@3 | 100.0% | Was the correct section in the top-3 retrieved chunks? |
+| Mean Reciprocal Rank (MRR) | 1.000 | How highly was the correct section ranked (1.0 = always rank #1) |
+| Citation Accuracy | 100.0% | Did the generated answer cite the correct section? |
+| Refusal Accuracy | 100.0% | Did the off-topic question get correctly refused, not hallucinated? |
+| Overall Pass Rate | 100.0% | Combined score across all questions and runs |
+
+**Honest caveat:** citation scoring counts a pass if *at least one* correct section is cited — it doesn't penalize an extraneous incorrect citation alongside a correct one. One test question's final answer still includes one irrelevant section alongside the correct one. A stricter exact-match metric is planned for V2.
+
+**Debugging path to 100%:** `temperature=0.0` alone produced flaky results (1/3 correct) on the one question whose answer spans two sections. Adding a fixed `seed` for full determinism made it *worse* (0/3, consistently) by triggering greedy-decoding collapse into a degenerate output — a real finding, not just a tuning footnote. The fix was `temperature=0.2` (small, bounded randomness) + a fixed seed + a prompt update explicitly permitting multi-section citations.
 
 ## Known limitations (and why they're not fixed yet)
 
@@ -80,6 +98,7 @@ Documented honestly rather than hidden — each was found through direct testing
 - **A dense "summary" chunk can dominate retrieval** for numeric questions regardless of topic, since it touches every section. Planned fix: reranking, V2.
 - **Section-based chunking is currently document-specific** (hardcoded headers) rather than structurally detected (font size/boldness). Planned fix: V2.
 - **Local LLM citation accuracy was inconsistent under default sampling** — diagnosed via a dedicated retrieval-vs-generation trace showing retrieval was correct while generation occasionally mis-attributed a fact to the wrong section. Fixed by setting `temperature=0.0`.
+- **Citation scoring is lenient** (at least one correct citation = pass), so a 100% evaluation score doesn't guarantee zero extraneous citations — see Evaluation section above. Stricter exact-match scoring is planned for V2.
 
 ## Roadmap
 
